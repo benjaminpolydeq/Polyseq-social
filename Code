@@ -1,0 +1,67 @@
+# app.py
+import streamlit as st
+import firebase_admin
+from firebase_admin import credentials, firestore, messaging
+from datetime import datetime
+
+# --- INITIALISATION FIREBASE ---
+cred = credentials.Certificate("firebase_config.json")
+firebase_admin.initialize_app(cred)
+db = firestore.client()
+
+# --- CONFIGURATION STREAMLIT ---
+st.set_page_config(
+    page_title="Polyseq Web",
+    page_icon="🎵",
+    layout="wide"
+)
+
+st.title("🎶 Polyseq Music & Community")
+st.subheader("Collaboration musicale en live et partage de séquences")
+
+# --- SÉQUENCE DE POSTS ---
+st.header("Publications")
+post_input = st.text_area("Écris un post musical ici...")
+
+if st.button("Publier"):
+    if post_input.strip() != "":
+        post_ref = db.collection("posts").document()
+        post_ref.set({
+            "content": post_input,
+            "timestamp": datetime.utcnow()
+        })
+        st.success("Post publié avec succès !")
+        # --- NOTIFICATION PUSH ---
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title="Nouveau post Polyseq !",
+                body=post_input[:50] + "..."
+            ),
+            topic="polyseq"
+        )
+        messaging.send(message)
+
+# --- AFFICHER LES POSTS EXISTANTS ---
+st.header("Fil d'actualités")
+posts = db.collection("posts").order_by("timestamp", direction=firestore.Query.DESCENDING).stream()
+for post in posts:
+    data = post.to_dict()
+    st.markdown(f"**{data['timestamp'].strftime('%d/%m/%Y %H:%M:%S')}**: {data['content']}")
+
+# --- CHAT SIMPLIFIÉ (Realtime Database) ---
+st.header("Chat en direct")
+chat_message = st.text_input("Écris un message...")
+if st.button("Envoyer"):
+    if chat_message.strip() != "":
+        db.collection("chat").document().set({
+            "message": chat_message,
+            "timestamp": datetime.utcnow()
+        })
+        st.success("Message envoyé !")
+
+# --- AFFICHAGE DES MESSAGES ---
+messages = db.collection("chat").order_by("timestamp", direction=firestore.Query.ASCENDING).stream()
+st.subheader("Messages en direct")
+for msg in messages:
+    data = msg.to_dict()
+    st.write(f"{data['timestamp'].strftime('%H:%M:%S')} - {data['message']}")
